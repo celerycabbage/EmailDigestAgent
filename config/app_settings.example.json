@@ -1,0 +1,7 @@
+{
+  "email_scope": "unread",
+  "hours": 24,
+  "max_emails": 50,
+  "schedule_time": "08:00",
+  "report_recipient": "your_email@example.com"
+}

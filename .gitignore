@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+output/
+data/
+config/app_settings.json
+.streamlit/secrets.toml
+Hello-Agents-V1.0.3-20260717.pdf
+gitignore.txt
