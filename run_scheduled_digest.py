@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from email_digest_service import ROOT_DIR, load_settings, run_digest
+from time_utils import app_now
 
 
 STATE_PATH = ROOT_DIR / "data" / "scheduler_state.json"
@@ -14,7 +15,7 @@ LOG_PATH = ROOT_DIR / "data" / "scheduler.log"
 def log(message: str) -> None:
     LOG_PATH.parent.mkdir(exist_ok=True)
     with LOG_PATH.open("a", encoding="utf-8") as file:
-        file.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} {message}\n")
+        file.write(f"{app_now():%Y-%m-%d %H:%M:%S} {message}\n")
 
 
 def already_ran_today(today: str) -> bool:
@@ -28,7 +29,7 @@ def already_ran_today(today: str) -> bool:
 
 def main() -> None:
     settings = load_settings()
-    now = datetime.now()
+    now = app_now()
     today = now.strftime("%Y-%m-%d")
     scheduled_time = datetime.strptime(settings.schedule_time, "%H:%M").time()
     if now.time() < scheduled_time or already_ran_today(today):

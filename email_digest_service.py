@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv, set_key
+from time_utils import app_now
 
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -46,6 +47,9 @@ class AppSettings:
     sender_filter: str = ""
     subject_filter: str = ""
     attachment_filter: str = "all"  # all | with | without
+    enable_multi_agent: bool = True
+    enable_memory: bool = True
+    require_tool_approval: bool = True
 
     def validate(self) -> None:
         if self.email_scope not in {"unread", "all"}:
@@ -245,7 +249,7 @@ def fetch_emails(settings: AppSettings) -> list[dict[str, str]]:
     if not all([server, username, password]):
         raise ValueError("请先在 .env 配置 IMAP_SERVER、IMAP_USERNAME 和 IMAP_PASSWORD")
 
-    since = (datetime.now() - timedelta(hours=int(settings.hours))).strftime("%d-%b-%Y")
+    since = (app_now() - timedelta(hours=int(settings.hours))).strftime("%d-%b-%Y")
     criterion = "UNSEEN" if settings.email_scope == "unread" else "ALL"
     last_error: Exception | None = None
     for _attempt in range(2):
@@ -303,6 +307,35 @@ def analyse_emails(emails: list[dict[str, str]]) -> list[dict[str, str]]:
     load_dotenv(ROOT_DIR / ".env", override=True)
     from hello_agents import HelloAgentsLLM
 
+    llm = HelloAgentsLLM()
+
+    def invoke(prompt_text: str) -> str:
+        return llm.invoke([{"role": "user", "content": prompt_text}]).content.strip()
+
+    settings = load_settings()
+    if settings.enable_multi_agent:
+        from agent_workflow import run_agent_workflow
+
+        safe_emails = _safe_emails_for_llm(emails)
+        for safe, original in zip(safe_emails, emails):
+            safe["message_key"] = original.get("message_key", original["id"])
+        items, trace = run_agent_workflow(
+            safe_emails,
+            invoke,
+            enable_memory=settings.enable_memory,
+            require_approval=settings.require_tool_approval,
+        )
+        trace_path = ROOT_DIR / "data" / "latest_agent_trace.json"
+        trace_path.parent.mkdir(exist_ok=True)
+        trace_path.write_text(json.dumps(trace, ensure_ascii=False, indent=2), encoding="utf-8")
+        original_by_id = {str(mail["id"]): mail for mail in emails}
+        for item in items:
+            original = original_by_id.get(str(item.get("id")))
+            if original:
+                item["from"] = original["from"]
+                item["subject"] = original["subject"]
+        return items
+
     prompt = f'''你是专业的邮件分析助手。请分析邮件列表，并且只返回 JSON。
 分类只能为：工作、客户、个人、通知、促销、垃圾。
 优先级只能为：高、中、低。
@@ -312,8 +345,7 @@ def analyse_emails(emails: list[dict[str, str]]) -> list[dict[str, str]]:
 
 返回格式：
 {{"items":[{{"id":"邮件ID","from":"发件人","subject":"主题","category":"分类","priority":"高/中/低","summary":"摘要","action":"行动项或无"}}]}}'''
-    response = HelloAgentsLLM().invoke([{"role": "user", "content": prompt}])
-    result = response.content.strip()
+    result = invoke(prompt)
     result = re.sub(r"^```(?:json)?\s*|\s*```$", "", result)
     parsed = json.loads(result)
     original_by_id = {str(mail["id"]): mail for mail in emails}
@@ -374,7 +406,7 @@ def prefilter_emails(emails: list[dict[str, str]], enabled: bool) -> tuple[list[
 
 def render_report(items: list[dict[str, str]], settings: AppSettings, run_stats: dict[str, int] | None = None) -> str:
     scope = "未读邮件" if settings.email_scope == "unread" else "全部邮件"
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = app_now().strftime("%Y-%m-%d %H:%M")
     if not items:
         return f"# 📬 邮件日报\n\n**生成时间：** {now}\n\n最近 {settings.hours} 小时没有符合条件的{scope}。"
     priorities = Counter(item.get("priority", "中") for item in items)
@@ -407,7 +439,7 @@ def render_report(items: list[dict[str, str]], settings: AppSettings, run_stats:
 def render_report_html(items: list[dict[str, str]], settings: AppSettings) -> str:
     """Build an email-client-friendly report using only inline-friendly HTML."""
     scope = "未读邮件" if settings.email_scope == "unread" else "全部邮件"
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = app_now().strftime("%Y-%m-%d %H:%M")
     priorities = Counter(item.get("priority", "中") for item in items)
     categories = Counter(item.get("category", "其他") for item in items)
     def safe(value: object) -> str:
@@ -452,7 +484,7 @@ def render_report_html(items: list[dict[str, str]], settings: AppSettings) -> st
 
 def save_report(report: str) -> Path:
     OUTPUT_DIR.mkdir(exist_ok=True)
-    path = OUTPUT_DIR / f"email_digest_{datetime.now():%Y%m%d_%H%M%S}.md"
+    path = OUTPUT_DIR / f"email_digest_{app_now():%Y%m%d_%H%M%S}.md"
     path.write_text(report, encoding="utf-8")
     return path
 
@@ -468,7 +500,7 @@ def send_report(report: str, recipient: str, html_report: str) -> None:
     if not all([server, username, password, recipient]):
         raise ValueError("请在 .env 配置 SMTP_SERVER、SMTP_USERNAME、SMTP_PASSWORD 与 REPORT_RECIPIENT")
     message = EmailMessage()
-    message["Subject"] = f"邮件日报 - {datetime.now():%Y-%m-%d}"
+    message["Subject"] = f"邮件日报 - {app_now():%Y-%m-%d}"
     message["From"] = username
     message["To"] = recipient
     message.set_content(report)

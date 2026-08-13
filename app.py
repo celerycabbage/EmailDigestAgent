@@ -19,6 +19,8 @@ from email_digest_service import (
     run_digest,
     save_settings,
 )
+from agent_memory import SemanticMemory
+from agent_tools import decide, list_approvals
 
 
 st.set_page_config(page_title="邮件日报助手", page_icon="📬", layout="wide")
@@ -91,6 +93,9 @@ with st.sidebar:
         max_emails = st.number_input("每次最多分析邮件数", min_value=1, max_value=200, value=int(settings.max_emails))
         only_new = st.checkbox("仅分析未处理的新邮件（推荐，节省 API 调用）", value=settings.only_new)
         pre_filter = st.checkbox("规则预过滤订阅和促销邮件（推荐）", value=settings.enable_pre_filter)
+        multi_agent = st.checkbox("启用多 Agent 协作分析", value=settings.enable_multi_agent)
+        enable_memory = st.checkbox("启用历史语义记忆（RAG）", value=settings.enable_memory)
+        require_approval = st.checkbox("工具操作必须人工确认", value=settings.require_tool_approval)
         folder = st.text_input("邮箱文件夹", value=settings.mailbox_folder)
         sender_filter = st.text_input("发件人筛选（可选）", value=settings.sender_filter)
         subject_filter = st.text_input("主题关键词筛选（可选）", value=settings.subject_filter)
@@ -106,6 +111,8 @@ with st.sidebar:
             mailbox_email=settings.mailbox_email, mail_provider=settings.mail_provider,
             only_new=only_new, enable_pre_filter=pre_filter, mailbox_folder=folder.strip(), sender_filter=sender_filter.strip(), subject_filter=subject_filter.strip(),
             attachment_filter={"不限": "all", "仅含附件": "with", "仅无附件": "without"}[attachment_label],
+            enable_multi_agent=multi_agent, enable_memory=enable_memory,
+            require_tool_approval=require_approval,
         )
         save_settings(settings)
         st.success("配置已保存。定时任务将在下一个设定时间使用此配置。")
@@ -128,7 +135,10 @@ if st.button("生成并发送日报", type="primary"):
             st.markdown(report)
         except Exception as error:
             st.error("运行失败。请检查 .env 中的 LLM、IMAP 和 SMTP 配置。")
-            st.caption(f"错误类型：{type(error).__name__}")
+            safe_message = str(error)
+            if len(safe_message) > 300:
+                safe_message = safe_message[:300] + "…"
+            st.caption(f"错误类型：{type(error).__name__}；详情：{safe_message}")
 
 st.subheader("定时运行")
 if st.button("清空已处理邮件记录（下次将重新分析）"):
@@ -149,3 +159,23 @@ else:
             content = report_path.read_text(encoding="utf-8")
             st.markdown(content)
             st.download_button("下载 Markdown", content, file_name=report_path.name, mime="text/markdown", key=report_path.name)
+
+st.subheader("Agent 工具审批")
+st.caption("Agent 只提出日程或待办建议；确认后才会在本地创建待办或 iCalendar 文件。")
+pending_approvals = list_approvals("pending")
+if not pending_approvals:
+    with SemanticMemory() as memory:
+        memory_count = memory.count()
+    st.info(f"暂无待审批操作。语义记忆库当前包含 {memory_count} 条记录。")
+for proposal in pending_approvals:
+    with st.container(border=True):
+        st.write(f"**{proposal['title']}** · {'日程' if proposal['tool'] == 'calendar' else '待办'}")
+        st.write(proposal["details"])
+        approve_col, reject_col = st.columns(2)
+        if approve_col.button("批准执行", key=f"approve-{proposal['id']}", type="primary"):
+            decide(str(proposal["id"]), True)
+            st.success("操作已在本地执行。")
+            st.rerun()
+        if reject_col.button("拒绝", key=f"reject-{proposal['id']}"):
+            decide(str(proposal["id"]), False)
+            st.rerun()

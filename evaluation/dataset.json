@@ -1,0 +1,6 @@
+[
+  {"id": "eval-1", "category": "工作", "priority": "高", "has_action": true},
+  {"id": "eval-2", "category": "通知", "priority": "低", "has_action": false},
+  {"id": "eval-3", "category": "客户", "priority": "中", "has_action": true},
+  {"id": "eval-4", "category": "促销", "priority": "低", "has_action": false}
+]

@@ -3,5 +3,8 @@
   "hours": 24,
   "max_emails": 50,
   "schedule_time": "08:00",
-  "report_recipient": "your_email@example.com"
+  "report_recipient": "your_email@example.com",
+  "enable_multi_agent": true,
+  "enable_memory": true,
+  "require_tool_approval": true
 }

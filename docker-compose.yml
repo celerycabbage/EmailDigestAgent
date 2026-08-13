@@ -1,0 +1,54 @@
+services:
+  api:
+    build: .
+    command: uvicorn api:app --host 0.0.0.0 --port 8000
+    env_file: .env
+    environment:
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Shanghai}
+      TZ: ${APP_TIMEZONE:-Asia/Shanghai}
+      DATABASE_URL: postgresql://email_digest:email_digest@postgres:5432/email_digest
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    volumes: ["./config:/app/config", "./data:/app/data", "./output:/app/output"]
+    ports: ["8000:8000"]
+    depends_on: [postgres, redis]
+
+  web:
+    build: .
+    command: streamlit run app.py --server.address 0.0.0.0 --server.port 8501
+    env_file: .env
+    environment:
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Shanghai}
+      TZ: ${APP_TIMEZONE:-Asia/Shanghai}
+      DATABASE_URL: postgresql://email_digest:email_digest@postgres:5432/email_digest
+      CELERY_BROKER_URL: redis://redis:6379/0
+    volumes: ["./config:/app/config", "./data:/app/data", "./output:/app/output"]
+    ports: ["8501:8501"]
+    depends_on: [postgres, redis]
+
+  worker:
+    build: .
+    command: celery -A tasks.celery_app worker --loglevel=INFO
+    env_file: .env
+    environment:
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Shanghai}
+      TZ: ${APP_TIMEZONE:-Asia/Shanghai}
+      DATABASE_URL: postgresql://email_digest:email_digest@postgres:5432/email_digest
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    volumes: ["./config:/app/config", "./data:/app/data", "./output:/app/output"]
+    depends_on: [postgres, redis]
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: email_digest
+      POSTGRES_PASSWORD: email_digest
+      POSTGRES_DB: email_digest
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+
+  redis:
+    image: redis:7-alpine
+
+volumes:
+  postgres_data:
