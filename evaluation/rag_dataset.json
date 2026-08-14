@@ -1,0 +1,22 @@
+[
+  {
+    "memory": "Alpha 项目的正式上线窗口为 8 月 20 日 22:00，负责人是陈晨，回滚窗口为上线后 30 分钟。",
+    "email": {"id": "rag-01", "from": "项目经理 <pm@example.test>", "subject": "Alpha 上线前最终确认", "date": "2026-08-14 09:00", "body": "请结合之前确定的计划，在今天下班前回复正式上线时间和负责人。"},
+    "expected": {"category": "工作", "priority": "高", "has_action": true, "summary_keywords": ["8月20日", "22", "陈晨"]}
+  },
+  {
+    "memory": "Beta 客户合同约定首批交付 500 个账号，验收联系人是李经理，验收截止日为 9 月 5 日。",
+    "email": {"id": "rag-02", "from": "客户 <client@example.test>", "subject": "确认首批验收安排", "date": "2026-08-14 10:00", "body": "请回复合同中约定的首批账号数量、联系人和验收截止日期。"},
+    "expected": {"category": "客户", "priority": "高", "has_action": true, "summary_keywords": ["500", "李经理", "9月5日"]}
+  },
+  {
+    "memory": "团队周会从本月起固定在每周三 14:30，会议室为海棠厅，远程会议号 8842。",
+    "email": {"id": "rag-03", "from": "新同事 <member@example.test>", "subject": "周会地点咨询", "date": "2026-08-14 11:00", "body": "我刚加入团队，请告知周会时间、会议室和远程会议号。"},
+    "expected": {"category": "工作", "priority": "中", "has_action": true, "summary_keywords": ["周三", "14:30", "海棠厅", "8842"]}
+  },
+  {
+    "memory": "报销制度规定：单张发票超过 3000 元需部门负责人审批，交通费统一选择费用类型 TRAVEL。",
+    "email": {"id": "rag-04", "from": "财务助理 <finance@example.test>", "subject": "补充报销信息", "date": "2026-08-14 12:00", "body": "这张 4200 元交通发票被退回，请根据制度说明需要谁审批以及应该选择哪个费用类型。"},
+    "expected": {"category": "工作", "priority": "中", "has_action": true, "summary_keywords": ["负责人", "TRAVEL"]}
+  }
+]

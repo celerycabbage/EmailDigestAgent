@@ -1,6 +1,50 @@
 [
-  {"id": "eval-1", "category": "工作", "priority": "高", "has_action": true},
-  {"id": "eval-2", "category": "通知", "priority": "低", "has_action": false},
-  {"id": "eval-3", "category": "客户", "priority": "中", "has_action": true},
-  {"id": "eval-4", "category": "促销", "priority": "低", "has_action": false}
+  {
+    "email": {"id": "eval-01", "from": "项目经理 <pm@example.test>", "subject": "今晚前确认 Alpha 项目上线清单", "date": "2026-08-10 09:00", "body": "请在今天18点前检查附件中的上线清单并回复确认，缺失项直接标注。"},
+    "expected": {"category": "工作", "priority": "高", "has_action": true, "summary_keywords": ["上线", "确认"]}
+  },
+  {
+    "email": {"id": "eval-02", "from": "系统通知 <notice@example.test>", "subject": "账户登录提醒", "date": "2026-08-10 10:00", "body": "您的账户于今日在常用设备成功登录。如为本人操作，无需处理。"},
+    "expected": {"category": "通知", "priority": "低", "has_action": false, "summary_keywords": ["登录"]}
+  },
+  {
+    "email": {"id": "eval-03", "from": "客户成功部 <client@example.test>", "subject": "Beta 客户需求确认", "date": "2026-08-10 11:00", "body": "客户希望本周五前收到新版接口方案，请明天下午前回复预计交付时间。"},
+    "expected": {"category": "客户", "priority": "高", "has_action": true, "summary_keywords": ["客户", "接口", "交付"]}
+  },
+  {
+    "email": {"id": "eval-04", "from": "商城活动 <sale@example.test>", "subject": "会员日限时八折", "date": "2026-08-10 12:00", "body": "会员专享优惠，今晚24点结束。点击查看活动商品。"},
+    "expected": {"category": "促销", "priority": "低", "has_action": false, "summary_keywords": ["优惠"]}
+  },
+  {
+    "email": {"id": "eval-05", "from": "人力资源 <hr@example.test>", "subject": "季度绩效材料提交", "date": "2026-08-11 09:00", "body": "请各位同事在周三17点前提交季度绩效自评表，逾期将影响评审安排。"},
+    "expected": {"category": "工作", "priority": "高", "has_action": true, "summary_keywords": ["绩效", "提交"]}
+  },
+  {
+    "email": {"id": "eval-06", "from": "朋友 <friend@example.test>", "subject": "周末聚餐", "date": "2026-08-11 10:00", "body": "大家准备周六晚上聚餐，地点稍后在群里通知，有空就来。"},
+    "expected": {"category": "个人", "priority": "低", "has_action": false, "summary_keywords": ["聚餐"]}
+  },
+  {
+    "email": {"id": "eval-07", "from": "财务部 <finance@example.test>", "subject": "报销单信息需要补充", "date": "2026-08-11 11:00", "body": "你提交的差旅报销缺少发票号码，请在两个工作日内补充后重新提交。"},
+    "expected": {"category": "工作", "priority": "中", "has_action": true, "summary_keywords": ["报销", "发票"]}
+  },
+  {
+    "email": {"id": "eval-08", "from": "云服务平台 <cloud@example.test>", "subject": "计划维护通知", "date": "2026-08-11 12:00", "body": "平台将在本周日凌晨2点到4点维护，期间控制台可能短暂不可用。"},
+    "expected": {"category": "通知", "priority": "中", "has_action": false, "summary_keywords": ["维护", "不可用"]}
+  },
+  {
+    "email": {"id": "eval-09", "from": "潜在客户 <lead@example.test>", "subject": "产品演示预约", "date": "2026-08-12 09:00", "body": "我们希望预约下周二下午三点的产品演示，请确认该时间是否方便。"},
+    "expected": {"category": "客户", "priority": "中", "has_action": true, "summary_keywords": ["演示", "预约"]}
+  },
+  {
+    "email": {"id": "eval-10", "from": "Newsletter <news@example.test>", "subject": "本周技术资讯精选", "date": "2026-08-12 10:00", "body": "本期包含数据库、云原生和人工智能领域的十篇文章，可随时取消订阅。"},
+    "expected": {"category": "促销", "priority": "低", "has_action": false, "summary_keywords": ["资讯"]}
+  },
+  {
+    "email": {"id": "eval-11", "from": "安全团队 <security@example.test>", "subject": "紧急：生产环境密钥即将过期", "date": "2026-08-12 11:00", "body": "生产环境访问密钥将在24小时后过期，请值班工程师立即轮换并完成验证。"},
+    "expected": {"category": "工作", "priority": "高", "has_action": true, "summary_keywords": ["密钥", "过期", "轮换"]}
+  },
+  {
+    "email": {"id": "eval-12", "from": "快递服务 <delivery@example.test>", "subject": "包裹已放入快递柜", "date": "2026-08-12 12:00", "body": "您的包裹已存放至小区快递柜，请在三天内凭取件码领取。"},
+    "expected": {"category": "个人", "priority": "中", "has_action": true, "summary_keywords": ["包裹", "领取"]}
+  }
 ]

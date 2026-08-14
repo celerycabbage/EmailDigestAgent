@@ -7,7 +7,10 @@ venv/
 output/
 *.db
 .pytest_cache/
+# 本机运行数据：邮件处理记录、100 封合成评测快照、评测结果和执行链路均不得上传。
 data/
+# 明确保留，防止后续有人缩小 data/ 忽略范围时意外提交评测邮件或结果。
+data/evaluations/
 config/app_settings.json
 .streamlit/secrets.toml
 Hello-Agents-V1.0.3-20260717.pdf

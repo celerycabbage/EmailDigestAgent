@@ -22,7 +22,8 @@ from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv, set_key
+from dotenv import set_key
+from runtime_config import refresh_runtime_config
 from time_utils import app_now
 
 
@@ -50,6 +51,8 @@ class AppSettings:
     enable_multi_agent: bool = True
     enable_memory: bool = True
     require_tool_approval: bool = True
+    rag_strategy: str = "hybrid"  # none | vector | hybrid
+    conditional_agent_routing: bool = True
 
     def validate(self) -> None:
         if self.email_scope not in {"unread", "all"}:
@@ -66,6 +69,8 @@ class AppSettings:
             raise ValueError("邮箱文件夹无效")
         if self.attachment_filter not in {"all", "with", "without"}:
             raise ValueError("附件筛选无效")
+        if self.rag_strategy not in {"none", "vector", "hybrid"}:
+            raise ValueError("RAG 检索策略无效")
 
 
 @dataclass(frozen=True)
@@ -96,21 +101,55 @@ def configure_llm(api_key: str, base_url: str, model_id: str) -> None:
         raise ValueError("请输入模型名称")
     env_path = ROOT_DIR / ".env"
     env_path.touch(exist_ok=True)
-    load_dotenv(env_path, override=False)
+    refresh_runtime_config(env_path)
     set_key(str(env_path), "LLM_API_KEY", api_key.strip())
     set_key(str(env_path), "LLM_BASE_URL", base_url.strip())
     set_key(str(env_path), "LLM_MODEL_ID", model_id.strip())
+    os.environ.update({"LLM_API_KEY": api_key.strip(), "LLM_BASE_URL": base_url.strip(), "LLM_MODEL_ID": model_id.strip()})
 
 
 def llm_is_configured() -> bool:
-    load_dotenv(ROOT_DIR / ".env", override=True)
+    refresh_runtime_config(ROOT_DIR / ".env")
     return bool(os.getenv("LLM_API_KEY", "").strip())
 
 
 def load_llm_config() -> dict[str, str]:
     """Return only non-secret model settings for safe UI prefilling."""
-    load_dotenv(ROOT_DIR / ".env", override=True)
+    refresh_runtime_config(ROOT_DIR / ".env")
     return {"base_url": os.getenv("LLM_BASE_URL", ""), "model_id": os.getenv("LLM_MODEL_ID", "")}
+
+
+def configure_embedding(api_key: str, base_url: str, model_id: str, fallback: bool = True) -> None:
+    """Save an optional OpenAI-compatible embedding configuration."""
+    env_path = ROOT_DIR / ".env"
+    refresh_runtime_config(env_path)
+    existing_key = os.getenv("EMBEDDING_API_KEY", "").strip()
+    effective_key = api_key.strip() or existing_key
+    if not all([effective_key, base_url.strip(), model_id.strip()]):
+        raise ValueError("请填写 Embedding API Key、服务地址和模型名称")
+    if not base_url.startswith(("https://", "http://")):
+        raise ValueError("Embedding 服务地址必须以 http:// 或 https:// 开头")
+    env_path.touch(exist_ok=True)
+    set_key(str(env_path), "EMBEDDING_API_KEY", effective_key)
+    set_key(str(env_path), "EMBEDDING_BASE_URL", base_url.strip())
+    set_key(str(env_path), "EMBEDDING_MODEL_ID", model_id.strip())
+    set_key(str(env_path), "EMBEDDING_FALLBACK_TO_LOCAL", "true" if fallback else "false")
+    os.environ.update({
+        "EMBEDDING_API_KEY": effective_key,
+        "EMBEDDING_BASE_URL": base_url.strip(),
+        "EMBEDDING_MODEL_ID": model_id.strip(),
+        "EMBEDDING_FALLBACK_TO_LOCAL": "true" if fallback else "false",
+    })
+
+
+def load_embedding_config() -> dict[str, str | bool]:
+    refresh_runtime_config(ROOT_DIR / ".env")
+    return {
+        "configured": bool(os.getenv("EMBEDDING_API_KEY", "").strip() and os.getenv("EMBEDDING_MODEL_ID", "").strip()),
+        "base_url": os.getenv("EMBEDDING_BASE_URL", ""),
+        "model_id": os.getenv("EMBEDDING_MODEL_ID", ""),
+        "fallback": os.getenv("EMBEDDING_FALLBACK_TO_LOCAL", "true").lower() not in {"0", "false", "no"},
+    }
 
 
 def detect_provider(email_address: str) -> str:
@@ -151,6 +190,7 @@ def configure_mailbox(email_address: str, authorization_code: str, provider_name
     }
     for key, value in values.items():
         set_key(str(env_path), key, value)
+        os.environ[key] = value
     return provider
 
 
@@ -241,7 +281,7 @@ def _message_key(message: Any, uid: str) -> str:
 
 def fetch_emails(settings: AppSettings) -> list[dict[str, str]]:
     """Fetch mail read-only; BODY.PEEK prevents setting messages to read."""
-    load_dotenv(ROOT_DIR / ".env", override=True)
+    refresh_runtime_config(ROOT_DIR / ".env")
     server = os.getenv("IMAP_SERVER", "")
     username = os.getenv("IMAP_USERNAME", "")
     password = os.getenv("IMAP_PASSWORD", "")
@@ -304,7 +344,7 @@ def fetch_emails(settings: AppSettings) -> list[dict[str, str]]:
 def analyse_emails(emails: list[dict[str, str]]) -> list[dict[str, str]]:
     if not emails:
         return []
-    load_dotenv(ROOT_DIR / ".env", override=True)
+    refresh_runtime_config(ROOT_DIR / ".env")
     from hello_agents import HelloAgentsLLM
 
     llm = HelloAgentsLLM()
@@ -324,6 +364,8 @@ def analyse_emails(emails: list[dict[str, str]]) -> list[dict[str, str]]:
             invoke,
             enable_memory=settings.enable_memory,
             require_approval=settings.require_tool_approval,
+            memory_strategy=settings.rag_strategy,
+            conditional_routing=settings.conditional_agent_routing,
         )
         trace_path = ROOT_DIR / "data" / "latest_agent_trace.json"
         trace_path.parent.mkdir(exist_ok=True)
@@ -336,12 +378,15 @@ def analyse_emails(emails: list[dict[str, str]]) -> list[dict[str, str]]:
                 item["subject"] = original["subject"]
         return items
 
-    prompt = f'''你是专业的邮件分析助手。请分析邮件列表，并且只返回 JSON。
+    from security import SECURITY_POLICY, protect_email_payload
+
+    prompt = f'''{SECURITY_POLICY}
+你是专业的邮件分析助手。请分析邮件列表，并且只返回 JSON。
 分类只能为：工作、客户、个人、通知、促销、垃圾。
 优先级只能为：高、中、低。
 每封邮件生成一句中文摘要；需要行动时写 1-2 句行动项，否则 action 填“无”。
 
-邮件数据：{json.dumps(_safe_emails_for_llm(emails), ensure_ascii=False)}
+邮件数据：{json.dumps(protect_email_payload(_safe_emails_for_llm(emails)), ensure_ascii=False)}
 
 返回格式：
 {{"items":[{{"id":"邮件ID","from":"发件人","subject":"主题","category":"分类","priority":"高/中/低","summary":"摘要","action":"行动项或无"}}]}}'''
@@ -490,7 +535,7 @@ def save_report(report: str) -> Path:
 
 
 def send_report(report: str, recipient: str, html_report: str) -> None:
-    load_dotenv(ROOT_DIR / ".env", override=True)
+    refresh_runtime_config(ROOT_DIR / ".env")
     server = os.getenv("SMTP_SERVER", "")
     username = os.getenv("SMTP_USERNAME") or os.getenv("IMAP_USERNAME", "")
     password = os.getenv("SMTP_PASSWORD") or os.getenv("IMAP_PASSWORD", "")

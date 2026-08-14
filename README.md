@@ -7,10 +7,13 @@ EmailDigestAgent 是一个面向个人邮箱的本地 AI Agent 项目。系统�
 ## 项目亮点
 
 - **多 Agent 工作流**：分诊 Agent、摘要 Agent、行动规划 Agent 和日报编排 Agent 分工处理邮件，并保存各阶段执行轨迹。
-- **RAG 个性化记忆**：检索历史邮件摘要作为上下文，增强相似邮件和连续事项的理解能力；本地使用 SQLite，容器模式使用 PostgreSQL + pgvector。
+- **RAG 个性化记忆**：支持独立的 OpenAI 兼容 Embedding 服务，通过向量召回、BM25 和 RRF 重排序检索历史上下文；本地使用 SQLite，容器模式使用 PostgreSQL + pgvector。
 - **工具调用与 Human-in-the-loop**：Agent 可以提出创建待办或日程的建议，但必须经过用户在 Web 页面确认后才会执行。
-- **Agent 评测体系**：提供脱敏样例集和离线评分工具，覆盖分类准确率、优先级准确率、行动识别率、ID 溯源率、延迟和估算成本。
+- - **Agent 评测**：后台完成 100 封脱敏真实邮件端到端评测，分类准确率 **93.0%**、优先级准确率 **92.0%**、行动项 F1 **92.59%**、摘要关键词召回 **95.08%**、输出覆盖率 **100%**、幻觉率 **0%**；总耗时 192.63 秒。
+- **隐私友好的可观测性**：记录各 Agent 的耗时、输入输出数量、估算 Token、成功率和脱敏错误，但不保存邮件正文、Prompt 或密钥。
 - **工程化架构**：通过 FastAPI 提供服务接口，使用 Celery + Redis 执行异步任务，并加入失败重试和任务状态管理。
+- **条件式 Agent 编排**：根据分诊结果决定是否调用行动规划 Agent，跳过低价值邮件，并对结构化输出进行校验和自动重试。
+- **安全与 CI**：隔离不可信邮件内容、检测 Prompt Injection、强制工具审批；GitHub Actions 自动运行测试、密钥扫描和 Docker 构建。
 - **隐私与成本控制**：邮件只读获取、敏感信息脱敏、正文截断、历史去重和低价值邮件预过滤，减少隐私暴露与重复模型调用。
 
 ## 工作流程
@@ -24,13 +27,13 @@ IMAP 只读取信
       ▼
 分诊 Agent ──► 分类与优先级
       │
-      ├──► RAG 检索历史语义记忆
+      ├──► pgvector / SQLite + BM25 + RRF
       │
       ▼
-摘要 Agent ──► 邮件摘要
+摘要 Agent ──► 邮件摘要与结构化校验
       │
       ▼
-行动规划 Agent ──► 待办/日程建议
+条件路由 ──► 行动规划 Agent ──► 待办/日程建议
       │
       ├──► 人工审批 ──► 本地待办或 iCalendar 文件
       │
@@ -45,12 +48,12 @@ IMAP 只读取信
 | 分类 | 技术 |
 |---|---|
 | 语言与界面 | Python、Streamlit |
-| Agent 与模型 | HelloAgents、OpenAI 兼容 API、Prompt Engineering、RAG |
+| Agent 与模型 | HelloAgents、OpenAI 兼容 Chat/Embedding API、条件路由、RAG |
 | 邮件协议 | IMAP、SMTP、MIME HTML |
 | API 与任务 | FastAPI、Celery、Redis |
 | 数据与向量检索 | SQLite、PostgreSQL、pgvector |
 | 部署与调度 | Docker Compose、Windows Task Scheduler、macOS launchd |
-| 测试与评测 | unittest、自定义 Agent Evaluation |
+| 测试与评测 | unittest、RAG Ablation、自定义 Agent Evaluation、GitHub Actions |
 
 ## 功能说明
 
@@ -71,6 +74,18 @@ IMAP 只读取信
 - **日程工具**：批准后在 `output/calendar/` 生成可导入日历软件的 `.ics` 文件。
 
 工具建议默认处于 `pending` 状态。用户必须在 Streamlit 页面底部的“Agent 工具审批”区域批准或拒绝，Agent 不会自行执行外部操作。
+
+### RAG 检索策略
+
+Web 页面支持三种策略：
+
+- **混合检索**：真实/本地向量召回 + BM25 关键词匹配 + RRF 重排序，默认推荐；
+- **仅向量检索**：只使用语义相似度；
+- **不检索**：关闭历史上下文，用于基线或隐私敏感场景。
+
+Embedding 与聊天模型可以来自不同服务商。若聊天服务不提供 Embeddings API，可在页面“Embedding / RAG 配置”中填写另一个 OpenAI 兼容服务。未配置或调用失败时，项目可以回退本地哈希向量，不影响日报生成。
+
+切换 Embedding 模型后，勾选并点击“重新索引”可将已有的脱敏历史摘要转换为新模型向量。该操作可能产生 Embedding 费用，页面会显示实际使用的后端和模型。
 
 ## 环境要求
 
@@ -141,7 +156,8 @@ chmod +x 启动邮件日报助手.command
 2. 填写邮箱地址、邮箱类型和 IMAP/SMTP 授权码。
 3. 设置邮件范围、时间窗口、最大邮件数和筛选条件。
 4. 开启多 Agent、RAG 记忆和人工审批。
-5. 点击“生成并发送日报”进行首次测试。
+5. 选择 RAG 策略和是否启用条件式 Agent 路由。
+6. 点击“生成并发送日报”进行首次测试。
 
 API Key 和邮箱授权码保存在本机 `.env` 中，页面不会回显这些敏感值。
 
@@ -183,6 +199,8 @@ Docker Compose 会启动以下组件：
 - `redis`：消息队列和任务结果后端；
 - `postgres`：带 pgvector 的 PostgreSQL 语义记忆库。
 
+Docker 模式下，页面会把日报提交到 Redis，由 Celery Worker 后台执行，并每两秒自动回显任务状态和最终报告；本地 Conda 模式仍同步执行。宿主机 `.env` 会挂载到容器，因此页面更新的模型、Embedding 和邮箱配置可被后续 Worker 任务读取。
+
 停止服务：
 
 ```bash
@@ -197,12 +215,27 @@ docker compose down
 |---|---|---|
 | `GET` | `/health` | 服务健康检查 |
 | `POST` | `/digests?send=true` | 将日报任务提交到 Celery 队列 |
+| `GET` | `/tasks/{task_id}` | 查询异步任务进度、结果或脱敏错误 |
 | `GET` | `/approvals` | 查询等待人工处理的工具建议 |
 | `POST` | `/approvals/{id}?approve=true` | 批准或拒绝工具建议 |
 
 ## Agent 评测
 
-项目提供 [evaluation/dataset.json](evaluation/dataset.json) 脱敏基准样例和 [evaluation.py](evaluation.py) 离线评分程序。
+项目提供 [evaluation/dataset.json](evaluation/dataset.json) 中的 12 封脱敏合成邮件。评测会调用与日报相同的分诊、摘要、行动规划和结果合并流程，不读取真实邮箱，也不会发送邮件或创建工具审批。
+
+### 在 Web 页面运行
+
+打开页面底部的“Agent 自动评测”，选择 4、8 或 12 个样例，确认可能产生少量模型费用后点击“运行完整 Agent 评测”。页面会展示主要指标，并允许查看全部预测结果。
+
+### 在命令行运行完整评测
+
+```bash
+python evaluation.py --live --limit 12
+```
+
+结果保存在本机 `data/evaluations/`，不会提交到 GitHub。
+
+### 对已有预测结果离线评分
 
 预测文件格式示例：
 
@@ -219,7 +252,7 @@ docker compose down
 }
 ```
 
-运行评测：
+运行离线评分：
 
 ```bash
 python evaluation.py predictions.json --cost 0.01
@@ -229,10 +262,48 @@ python evaluation.py predictions.json --cost 0.01
 
 - `category_accuracy`：分类准确率；
 - `priority_accuracy`：优先级准确率；
-- `action_detection_accuracy`：是否正确识别行动项；
-- `grounded_id_rate`：输出是否能追溯到真实输入邮件；
+- `action_precision`、`action_recall`、`action_f1`：行动项识别质量；
+- `summary_keyword_recall`：摘要对关键信息的覆盖程度；
+- `output_coverage`：基准邮件的输出覆盖率；
+- `grounded_id_rate`、`hallucination_rate`：输出溯源率与虚构 ID 比例；
 - `latency_seconds`：评测处理延迟；
-- `estimated_cost_usd`：手动传入的模型调用成本估算。
+- `estimated_input_tokens`、`estimated_output_tokens`：本地估算 Token；
+- `estimated_cost_usd`：根据 `.env` 中模型单价计算的估算成本。
+
+## Agent 可观测性
+
+每次日报或在线评测都会在 `data/traces/` 生成一条运行记录。Web 页面“Agent 运行监控”区域展示：
+
+- 最近运行次数和成功率；
+- 平均端到端耗时；
+- 输入、输出 Token 估算；
+- 模型成本估算；
+- RAG 检索、分诊、摘要、行动规划、日报合并和工具网关的阶段耗时；
+- 失败阶段、异常类型和经过脱敏的错误摘要。
+
+如需成本估算，在 `.env` 中填写服务商当前模型价格：
+
+```env
+LLM_INPUT_PRICE_PER_MILLION=0
+LLM_OUTPUT_PRICE_PER_MILLION=0
+```
+
+单位为美元/百万 Token。保持为 `0` 时仍统计 Token，但成本显示为 `$0`。Token 采用本地近似算法，账单应以模型服务商数据为准。
+
+
+
+## 安全边界
+
+- 邮件正文使用不可信内容边界包裹，不允许正文改变 Agent 规则或输出格式；
+- 检测中英文 Prompt Injection、系统提示泄露和密钥索取模式；
+- 模型 JSON 必须覆盖本阶段真实邮件 ID、不得重复，分类和优先级必须属于白名单；
+- 校验失败自动重试一次，仍失败则终止任务并写入脱敏追踪；
+- 工具调用始终进入人工审批，不直接执行外部操作；
+- API 任务 ID 经过格式校验，异步错误回显前清理疑似密钥。
+
+## CI/CD
+
+`.github/workflows/ci.yml` 在推送和 Pull Request 时自动执行依赖安装、Python 编译、单元与安全测试、Git 跟踪文件密钥扫描、Docker Compose 校验和镜像构建。`main` 分支验证通过后，将 `latest` 和提交 SHA 两个标签的镜像发布到 GitHub Container Registry（GHCR）。
 
 运行自动化测试：
 
@@ -280,18 +351,6 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.emaildigestagent.sch
 
 ## 配置、数据与隐私
 
-| 内容 | 保存位置 | 提交到 GitHub |
-|---|---|---|
-| API Key、邮箱账号与授权码 | `.env` | 否 |
-| 页面运行配置 | `config/app_settings.json` | 否 |
-| 已处理邮件缓存 | `data/processed_messages.json` | 否 |
-| Agent 执行轨迹 | `data/latest_agent_trace.json` | 否 |
-| 工具审批记录 | `data/tool_approvals.json` | 否 |
-| Agent 待办 | `data/agent_todos.json` | 否 |
-| SQLite 语义记忆 | `data/agent_memory.db` | 否 |
-| 日报与日历文件 | `output/` | 否 |
-| 配置示例 | `env.example`、`config/app_settings.example.json` | 是 |
-
 安全措施：
 
 - 使用 IMAP 只读模式和 `BODY.PEEK[]`，不会将邮件自动标记为已读。
@@ -312,13 +371,18 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.emaildigestagent.sch
 ├─ agent_workflow.py                   # 多 Agent 状态流与结果合并
 ├─ agent_memory.py                     # SQLite / pgvector 语义记忆
 ├─ agent_tools.py                      # 工具建议、审批与本地执行
+├─ security.py                         # Prompt Injection 检测与不可信内容边界
 ├─ api.py                              # FastAPI 服务入口
 ├─ tasks.py                            # Celery 异步日报任务
-├─ evaluation.py                       # Agent 离线评测程序
+├─ evaluation.py                       # Agent 在线运行与离线评分程序
+├─ observability.py                    # Agent 耗时、Token、成本与错误追踪
+├─ runtime_config.py                   # 容器与本地配置的安全动态刷新
 ├─ evaluation/
-│  └─ dataset.json                     # 脱敏评测样例
+│  ├─ dataset.json                     # 脱敏评测样例
+│  └─ rag_dataset.json                 # RAG 消融合成样例
 ├─ tests/
-│  └─ test_agent_components.py         # Agent、记忆与指标测试
+│  ├─ test_agent_components.py         # Agent、记忆与指标测试
+│  └─ test_security.py                 # 注入、重试、检索与任务安全测试
 ├─ run_scheduled_digest.py             # 本地定时任务执行入口
 ├─ Dockerfile                          # 应用容器镜像
 ├─ docker-compose.yml                  # Web/API/Worker/Redis/PostgreSQL 编排
@@ -327,8 +391,10 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.emaildigestagent.sch
 ├─ config/
 │  └─ app_settings.example.json        # 页面配置示例
 ├─ scripts/
+│  ├─ check_secrets.py                 # Git 跟踪文件密钥扫描
 │  ├─ register_scheduled_task.ps1      # Windows 任务注册脚本
 │  └─ com.emaildigestagent.scheduler.plist.template
+├─ .github/workflows/ci.yml            # 自动测试、安全扫描与 Docker 构建
 ├─ 启动邮件日报助手.cmd                # Windows 双击启动脚本
 └─ 启动邮件日报助手.command            # macOS 启动脚本
 ```
@@ -341,4 +407,9 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.emaildigestagent.sch
 - **日报数量少于设置值**：历史去重、时间范围、未读状态和预过滤规则都可能减少实际分析数量。
 - **日报没有自动发送**：确认定时任务已注册、电脑处于开机状态，并检查 `data/scheduler.log`。
 - **工具没有自动创建待办**：这是预期行为，需要在页面“Agent 工具审批”区域批准。
+- **监控成本始终为 0**：在 `.env` 配置模型输入、输出单价；未配置时只统计 Token。
+- **自动评测产生费用**：评测会调用三次模型 API，先选择 4 个样例进行小规模测试。
 - **Docker API 返回任务但未生成日报**：检查 `worker` 和 `redis` 服务是否正常运行，并查看容器日志。
+- **Embedding 一直显示 local**：需要单独配置兼容 OpenAI Embeddings API 的地址、模型和 Key；聊天模型服务未必提供 Embedding。
+- **Docker 任务一直排队**：执行 `docker compose ps`，确认 `worker` 与 `redis` 都处于运行状态。
+- **RAG 消融成本较高**：三种策略会分别运行完整 Agent 链路，应先确认模型价格和 API 余额。

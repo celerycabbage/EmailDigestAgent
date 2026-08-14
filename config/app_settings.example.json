@@ -6,5 +6,7 @@
   "report_recipient": "your_email@example.com",
   "enable_multi_agent": true,
   "enable_memory": true,
-  "require_tool_approval": true
+  "require_tool_approval": true,
+  "rag_strategy": "hybrid",
+  "conditional_agent_routing": true
 }

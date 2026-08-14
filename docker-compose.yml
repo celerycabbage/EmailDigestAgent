@@ -6,12 +6,15 @@ services:
     environment:
       APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Shanghai}
       TZ: ${APP_TIMEZONE:-Asia/Shanghai}
+      EXECUTION_MODE: async
       DATABASE_URL: postgresql://email_digest:email_digest@postgres:5432/email_digest
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
-    volumes: ["./config:/app/config", "./data:/app/data", "./output:/app/output"]
-    ports: ["8000:8000"]
-    depends_on: [postgres, redis]
+    volumes: ["./.env:/app/.env", "./config:/app/config", "./data:/app/data", "./output:/app/output"]
+    ports: ["127.0.0.1:8000:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
 
   web:
     build: .
@@ -20,11 +23,15 @@ services:
     environment:
       APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Shanghai}
       TZ: ${APP_TIMEZONE:-Asia/Shanghai}
+      EXECUTION_MODE: async
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
       DATABASE_URL: postgresql://email_digest:email_digest@postgres:5432/email_digest
       CELERY_BROKER_URL: redis://redis:6379/0
-    volumes: ["./config:/app/config", "./data:/app/data", "./output:/app/output"]
-    ports: ["8501:8501"]
-    depends_on: [postgres, redis]
+    volumes: ["./.env:/app/.env", "./config:/app/config", "./data:/app/data", "./output:/app/output"]
+    ports: ["127.0.0.1:8501:8501"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
 
   worker:
     build: .
@@ -33,22 +40,35 @@ services:
     environment:
       APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Shanghai}
       TZ: ${APP_TIMEZONE:-Asia/Shanghai}
+      EXECUTION_MODE: async
       DATABASE_URL: postgresql://email_digest:email_digest@postgres:5432/email_digest
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
-    volumes: ["./config:/app/config", "./data:/app/data", "./output:/app/output"]
-    depends_on: [postgres, redis]
+    volumes: ["./.env:/app/.env", "./config:/app/config", "./data:/app/data", "./output:/app/output"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
 
   postgres:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: email_digest
-      POSTGRES_PASSWORD: email_digest
+      POSTGRES_PASSWORD: email_digest # secret-scan: allow; local-only development credential
       POSTGRES_DB: email_digest
     volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U email_digest -d email_digest"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   redis:
     image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
 volumes:
   postgres_data:
